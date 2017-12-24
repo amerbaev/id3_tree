@@ -3,6 +3,8 @@ import csv
 import sys
 import math
 import os
+from collections import Counter
+import numpy as np
 
 
 def get_header_name_to_idx_maps(headers):
@@ -65,10 +67,10 @@ def get_class_labels(data, target_attribute):
     return labels
 
 
-def entropy(n, labels):
+def entropy(target):
     ent = 0
-    for label in labels.keys():
-        p_x = labels[label] / n
+    for label in set(target):
+        p_x = len([t for t in target if t == label]) / len(target)
         ent += - p_x * math.log(p_x, 2)
     return ent
 
@@ -89,22 +91,14 @@ def partition_data(data, group_att):
     return partitions
 
 
-def avg_entropy_w_partitions(data, splitting_att, target_attribute):
+def sum_entropy_by_attr(data, index, values, target):
     # find uniq values of splitting att
-    data_rows = data['rows']
-    n = len(data_rows)
-    partitions = partition_data(data, splitting_att)
+    sum_ent = 0
+    for val in values:
+        tgt = target[data.T[index] == val]
+        sum_ent += entropy(tgt)
 
-    avg_ent = 0
-
-    for partition_key in partitions.keys():
-        partitioned_data = partitions[partition_key]
-        partition_n = len(partitioned_data['rows'])
-        partition_labels = get_class_labels(partitioned_data, target_attribute)
-        partition_entropy = entropy(partition_n, partition_labels)
-        avg_ent += partition_n / n * partition_entropy
-
-    return avg_ent, partitions
+    return sum_ent
 
 
 def most_common_label(labels):
@@ -112,52 +106,46 @@ def most_common_label(labels):
     return mcl
 
 
-def id3(data, uniqs, remaining_atts, target_attribute):
-    labels = get_class_labels(data, target_attribute)
-
+def id3(data, target, features, target_names):
     node = {}
 
-    if len(labels.keys()) == 1:
-        node['label'] = next(iter(labels.keys()))
+    if len(set(target)) == 1:
+        node['label'] = target_names[target[0]]
         return node
 
-    if len(remaining_atts) == 0:
-        node['label'] = most_common_label(labels)
+    if len(features) == 0:
+        node['label'] = target_names[Counter(target).most_common(1)[0]]
         return node
 
-    n = len(data['rows'])
-    ent = entropy(n, labels)
+    ent = entropy(target)
 
     max_info_gain = None
-    max_info_gain_att = None
-    max_info_gain_partitions = None
+    max_info_gain_index = None
+    max_info_gain_values = None
 
-    for remaining_att in remaining_atts:
-        avg_ent, partitions = avg_entropy_w_partitions(data, remaining_att, target_attribute)
-        info_gain = ent - avg_ent
+    for index, column in enumerate(data.T):
+        values = set(column)
+        sum_ent = sum_entropy_by_attr(data, index, values, target)
+        info_gain = ent - sum_ent
         if max_info_gain is None or info_gain > max_info_gain:
             max_info_gain = info_gain
-            max_info_gain_att = remaining_att
-            max_info_gain_partitions = partitions
+            max_info_gain_index = index
+            max_info_gain_values = values
 
     if max_info_gain is None:
-        node['label'] = most_common_label(labels)
+        node['label'] = target_names[Counter(target).most_common(1)[0]]
         return node
 
-    node['attribute'] = max_info_gain_att
+    node['attribute'] = features[max_info_gain_index]
     node['nodes'] = {}
 
-    remaining_atts_for_subtrees = set(remaining_atts)
-    remaining_atts_for_subtrees.discard(max_info_gain_att)
+    data_for_subtrees = np.delete(data, max_info_gain_index, axis=1)
+    features_for_subtrees = np.delete(features, max_info_gain_index)
 
-    uniq_att_values = uniqs[max_info_gain_att]
-
-    for att_value in uniq_att_values:
-        if att_value not in max_info_gain_partitions.keys():
-            node['nodes'][att_value] = {'label': most_common_label(labels)}
-            continue
-        partition = max_info_gain_partitions[att_value]
-        node['nodes'][att_value] = id3(partition, uniqs, remaining_atts_for_subtrees, target_attribute)
+    for att_value in max_info_gain_values:
+        subtree_data = data_for_subtrees[data.T[max_info_gain_index] == att_value]
+        subtree_target = target[data.T[max_info_gain_index] == att_value]
+        node['nodes'][att_value] = id3(subtree_data, subtree_target, features_for_subtrees, target_names)
 
     return node
 
