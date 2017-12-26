@@ -106,15 +106,15 @@ def most_common_label(labels):
     return mcl
 
 
-def id3(data, target, features, target_names):
+def id3(data, target, features):
     node = {}
 
     if len(set(target)) == 1:
-        node['label'] = target_names[target[0]]
+        node['label'] = target[0]
         return node
 
     if len(features) == 0:
-        node['label'] = target_names[Counter(target).most_common(1)[0]]
+        node['label'] = Counter(target).most_common(1)[0]
         return node
 
     ent = entropy(target)
@@ -133,7 +133,7 @@ def id3(data, target, features, target_names):
             max_info_gain_values = values
 
     if max_info_gain is None:
-        node['label'] = target_names[Counter(target).most_common(1)[0]]
+        node['label'] = Counter(target).most_common(1)[0]
         return node
 
     node['attribute'] = features[max_info_gain_index]
@@ -145,7 +145,7 @@ def id3(data, target, features, target_names):
     for att_value in max_info_gain_values:
         subtree_data = data_for_subtrees[data.T[max_info_gain_index] == att_value]
         subtree_target = target[data.T[max_info_gain_index] == att_value]
-        node['nodes'][att_value] = id3(subtree_data, subtree_target, features_for_subtrees, target_names)
+        node['nodes'][att_value] = id3(subtree_data, subtree_target, features_for_subtrees)
 
     return node
 
@@ -162,11 +162,11 @@ def pretty_print_tree(root):
 
     def traverse(node, stack, rules):
         if 'label' in node:
-            stack.append(' THEN ' + node['label'])
+            stack.append('\tTHEN ' + node['label'])
             rules.add(''.join(stack))
             stack.pop()
         elif 'attribute' in node:
-            ifnd = 'IF ' if not stack else ' AND '
+            ifnd = 'IF ' if not stack else '\tAND '
             stack.append(ifnd + node['attribute'] + ' EQUALS ')
             for subnode_key in node['nodes']:
                 stack.append(subnode_key)
@@ -178,8 +178,26 @@ def pretty_print_tree(root):
     print(os.linesep.join(rules))
 
 
-def main():
+def predict(root, feature_names, data):
+    # print(data)
+    def traverse(node, value):
+        if 'label' in node:
+            return node['label']
+        elif 'attribute' in node:
+            attr_index = np.where(feature_names == node['attribute'])[0][0]
+            if value[attr_index] in node['nodes']:
+                return traverse(node['nodes'][value[attr_index]], value)
+            else:
+                return None
 
+    predictions = []
+    for val in data:
+        predictions.append(traverse(root, val))
+
+    return predictions
+
+
+def main():
     target_attribute = config['target_attribute']
     remaining_attributes = set(data['header'])
     remaining_attributes.remove(target_attribute)
