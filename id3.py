@@ -106,14 +106,16 @@ def most_common_label(labels):
     return mcl
 
 
-def id3(data, target, features, limit=None, ):
+def id3(data, target, features, feature_values, limit):
     node = {}
 
     if len(set(target)) == 1:
         node['label'] = target[0]
         return node
 
-    if len(features) == 0 or len > limit:
+    if len(features) == 0 or limit == 0:
+        # if limit == 0:
+        #     print('limit')
         node['label'] = Counter(target).most_common(1)[0]
         return node
 
@@ -121,7 +123,6 @@ def id3(data, target, features, limit=None, ):
 
     max_info_gain = None
     max_info_gain_index = None
-    max_info_gain_values = None
 
     for index, column in enumerate(data.T):
         values = set(column)
@@ -130,7 +131,6 @@ def id3(data, target, features, limit=None, ):
         if max_info_gain is None or info_gain > max_info_gain:
             max_info_gain = info_gain
             max_info_gain_index = index
-            max_info_gain_values = values
 
     if max_info_gain is None:
         node['label'] = Counter(target).most_common(1)[0]
@@ -141,11 +141,15 @@ def id3(data, target, features, limit=None, ):
 
     data_for_subtrees = np.delete(data, max_info_gain_index, axis=1)
     features_for_subtrees = np.delete(features, max_info_gain_index)
+    feature_values_for_subtrees = np.delete(feature_values, max_info_gain_index)
 
-    for att_value in max_info_gain_values:
+    for att_value in feature_values[max_info_gain_index]:
         subtree_data = data_for_subtrees[data.T[max_info_gain_index] == att_value]
         subtree_target = target[data.T[max_info_gain_index] == att_value]
-        node['nodes'][att_value] = id3(subtree_data, subtree_target, features_for_subtrees)
+        if len(subtree_target) != 0:
+            node['nodes'][att_value] = id3(subtree_data, subtree_target, features_for_subtrees, feature_values_for_subtrees, limit - 1)
+        else:
+            node['nodes'][att_value] = {'label': Counter(target).most_common(1)[0]}
 
     return node
 
@@ -196,32 +200,13 @@ def predict(root, feature_names, data):
 
     return predictions
 
-def properties(root):
-    nodes = 0
-    branch_len = []
-    min_len = None
-    max_len = None
-    def traverse(node, branch, branch_len):
-        nodes += 1
-        branch += 1
-        if 'label' in node:
-            branch_len.append(branch)
-            if not min_len or min_len > branch:
-                min_len = branch
-            if not max_len or max_len < branch:
-                max_len = branch
-        else:
-            for k in node['nodes']:
-                traverse(node['nodes'][k], branch)
-    traverse(root, 0)
-    return nodes, min_len, max_len, branch_len
-
 
 def count_nodes(root):
     if 'label' in root:
         return 1
     else:
         return sum([count_nodes(root['nodes'][n]) for n in root['nodes']])
+
 
 def main():
     target_attribute = config['target_attribute']
